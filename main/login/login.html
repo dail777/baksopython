@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+</head>
+<body>
+    <style>
+        body {
+            background: linear-gradient(135deg, #2980d9 0%, #0a2342 100%);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        #form-container {
+            background: rgba(255,255,255,0.08);
+            box-shadow: 0 8px 32px 0 rgba(44, 62, 80, 0.37);
+            border-radius: 16px;
+            padding: 32px 28px;
+            width: 350px;
+            backdrop-filter: blur(6px);
+            color: #fff;
+        }
+        h2, h3, label, #login-message, #register-message, p, a {
+            color: #fff !important;
+        }
+        h2 {
+            text-align: center;
+            margin-bottom: 18px;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        h3 {
+            text-align: center;
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+        label {
+            font-size: 15px;
+            margin-bottom: 4px;
+            display: block;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 14px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            font-size: 15px;
+            outline: none;
+            transition: background 0.2s;
+        }
+        input[type="text"]:focus, input[type="password"]:focus {
+            background: rgba(255,255,255,0.25);
+        }
+        button {
+            width: 100%;
+            padding: 10px 0;
+            background: linear-gradient(90deg, #2980d9 60%, #0a2342 100%);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: linear-gradient(90deg, #0a2342 60%, #2980d9 100%);
+        }
+        a {
+            text-decoration: none;
+            font-weight: 500;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        #login-message, #register-message {
+            background: rgba(41,128,217,0.15);
+            border-radius: 4px;
+            padding: 6px 0;
+            margin-top: 8px;
+            text-align: center;
+            font-size: 14px;
+            min-height: 18px;
+        }
+    </style>
+    <div id="form-container">
+        <form id="login-form" style="display:block;">
+            <h3>Login</h3>
+            <label for="login-username">Username:</label>
+            <input type="text" id="login-username" required>
+            <br>
+            <label for="login-password">Password:</label>
+            <input type="password" id="login-password" required>
+            <br>
+            <button type="submit">Login</button>
+            <p>Belum punya akun? <a href="#" onclick="showRegisterForm()">Buat Akun</a></p>
+            <div id="login-message"></div>
+        </form>
+
+        <form id="register-form" style="display:none;">
+            <h3>Buat Akun</h3>
+            <label for="register-username">Username:</label>
+            <input type="text" id="register-username" required>
+            <br>
+            <label for="register-password">Password:</label>
+            <input type="password" id="register-password" required>
+            <br>
+            <button type="submit">Daftar</button>
+            <p>Sudah punya akun? <a href="#" onclick="showLoginForm()">Login</a></p>
+            <div id="register-message"></div>
+        </form>
+    </div>
+
+    <script>
+    // Ensure default admin account exists and normalize account storage to { password, role }
+    (function ensureAdmin() {
+        try {
+            let accounts = JSON.parse(localStorage.getItem('accounts') || '{}');
+            // migrate string-password shape to object shape
+            for (const k in accounts) {
+                if (typeof accounts[k] === 'string') {
+                    accounts[k] = { password: accounts[k], role: 'User' };
+                }
+            }
+            if (!accounts['admin']) {
+                accounts['admin'] = { password: '12345', role: 'Admin' };
+            } else if (!accounts['admin'].role) {
+                accounts['admin'].role = 'Admin';
+            }
+            localStorage.setItem('accounts', JSON.stringify(accounts));
+        } catch (e) {
+            localStorage.setItem('accounts', JSON.stringify({ admin: { password: '12345', role: 'Admin' } }));
+        }
+    })();
+
+    // Also ensure a second admin account exists (non-destructive)
+    (function ensureSecondAdmin() {
+        try {
+            const accounts = JSON.parse(localStorage.getItem('accounts') || '{}');
+            if (!accounts['admin2']) {
+                accounts['admin2'] = { password: 'admin123', role: 'Admin' };
+                localStorage.setItem('accounts', JSON.stringify(accounts));
+            }
+        } catch (e) {
+            // if accounts malformed, keep original admin and add admin2
+            localStorage.setItem('accounts', JSON.stringify({ admin: { password: '12345', role: 'Admin' }, admin2: { password: 'admin123', role: 'Admin' } }));
+        }
+    })();
+
+    function showRegisterForm() {
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('register-form').style.display = 'block';
+    }
+    function showLoginForm() {
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'block';
+    }
+
+    // Simulasi penyimpanan akun di localStorage (shape: { username: { password, role } })
+    function saveAccount(username, password, role = 'User') {
+        let accounts = JSON.parse(localStorage.getItem('accounts') || '{}');
+        // migrate any string-password values
+        for (const k in accounts) if (typeof accounts[k] === 'string') accounts[k] = { password: accounts[k], role: 'User' };
+        if (accounts[username]) return false;
+        accounts[username] = { password: password, role: role };
+        localStorage.setItem('accounts', JSON.stringify(accounts));
+        return true;
+    }
+
+    function checkAccount(username, password) {
+        let accounts = JSON.parse(localStorage.getItem('accounts') || '{}');
+        // migrate shape if needed
+        for (const k in accounts) if (typeof accounts[k] === 'string') accounts[k] = { password: accounts[k], role: 'User' };
+        if (!accounts[username]) return false;
+        return accounts[username].password === password;
+    }
+
+    document.getElementById('register-form').onsubmit = function(e) {
+        e.preventDefault();
+        const username = document.getElementById('register-username').value;
+        const password = document.getElementById('register-password').value;
+        if (saveAccount(username, password)) {
+            document.getElementById('register-message').textContent = 'Akun berhasil dibuat. Silakan login.';
+            setTimeout(showLoginForm, 1000);
+        } else {
+            document.getElementById('register-message').textContent = 'Username sudah digunakan.';
+        }
+    };
+
+    document.getElementById('login-form').onsubmit = function(e) {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        if (checkAccount(username, password)) {
+            document.getElementById('login-message').textContent = 'Login berhasil!';
+            // Simpan username & role ke localStorage untuk dashboard
+            const accounts = JSON.parse(localStorage.getItem('accounts') || '{}');
+            const role = (accounts[username] && accounts[username].role) ? accounts[username].role : 'User';
+            localStorage.setItem('loggedInUser', username);
+            localStorage.setItem('loggedInRole', role);
+            setTimeout(function() {
+                // use relative paths from this file's location to project root
+                if (role && role.toLowerCase() === 'admin') {
+                    window.location.href = '../../masteradmin/admindb.html';
+                } else {
+                    window.location.href = '../../main/dashboard/index.html';
+                }
+            }, 800);
+        } else {
+            document.getElementById('login-message').textContent = 'Username atau password salah.';
+        }
+    };
+    </script>
+</body>
+</html>
