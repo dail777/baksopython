@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bakso Python Cibaduyut</title>
+</head>
+<body>
+    <header style="display: flex; justify-content: space-between; align-items: center; padding: 16px;">
+        <h1>Marketplace Bakso</h1>
+        <div style="display:flex;gap:12px;align-items:center;">
+            <button id="cartBtn" style="position:relative;padding:8px 12px;background:#0b5ed7;color:#fff;border-radius:6px;border:none;cursor:pointer;">Keranjang <span id="cartCount" style="background:#fff;color:#0b5ed7;padding:2px 6px;border-radius:12px;font-weight:600;margin-left:8px;">0</span></button>
+            <a href="../login/login.html" style="padding: 8px 16px; background: #007bff; color: #fff; border-radius: 4px; text-decoration: none;">Login</a>
+        </div>
+    </header>
+    <section style="max-width: 800px; margin: 32px auto;">
+        <form id="searchForm" style="display: flex; gap: 16px; margin-bottom: 24px;">
+            <input type="text" id="searchInput" placeholder="Cari bakso..." style="flex: 1; padding: 8px;">
+            <select id="filterSelect" style="padding: 8px;">
+                <option value="">Semua Jenis</option>
+                <option value="sapi">Bakso Sapi</option>
+                <option value="ayam">Bakso Ayam</option>
+                <option value="ikan">Bakso Ikan</option>
+                <option value="udang">Bakso Udang</option>
+                <option value="jamur">Bakso Jamur</option>
+            </select>
+            <button type="submit" style="padding: 8px 16px;">Cari</button>
+        </form>
+        <div id="productList" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px;">
+            <!-- Produk akan ditampilkan di sini -->
+        </div>
+    </section>
+    <script>
+    // Load products from localStorage so admin can add/remove
+    let products = [];
+    (function loadProducts() {
+        try {
+            const raw = localStorage.getItem('bakso_products');
+            if (raw) {
+                products = JSON.parse(raw);
+            } else {
+                products = [
+                    { name: "Bakso Sapi Premium", type: "sapi", price: "Rp 25.000", img: "bakso.png" },
+                    { name: "Bakso Ayam Gurih", type: "ayam", price: "Rp 20.000", img: "bakso.png" },
+                    { name: "Bakso Ikan Segar", type: "ikan", price: "Rp 22.000", img: "bakso.png" },
+                    { name: "Bakso Udang Lezat", type: "udang", price: "Rp 28.000", img: "bakso.png" },
+                    { name: "Bakso Jamur Sehat", type: "jamur", price: "Rp 18.000", img: "bakso.png" },
+                ];
+                localStorage.setItem('bakso_products', JSON.stringify(products));
+            }
+        } catch (e) {
+            products = [];
+        }
+    })();
+
+    // Migrate existing products in localStorage to use bakso-like images when appropriate
+    // Migrate any existing stored product/cart/order images to use bakso.png
+    (function migrateAllToBaksoPng(){
+        try {
+            // products
+            const rawP = localStorage.getItem('bakso_products');
+            if (rawP) {
+                const p = JSON.parse(rawP || '[]');
+                if (Array.isArray(p) && p.length > 0) {
+                    let changed = false;
+                    p.forEach(prod => { if (prod.img !== 'bakso.png') { prod.img = 'bakso.png'; changed = true; } });
+                    if (changed) localStorage.setItem('bakso_products', JSON.stringify(p));
+                }
+            }
+
+            // cart
+            const rawC = localStorage.getItem('bakso_cart');
+            if (rawC) {
+                const c = JSON.parse(rawC || '[]');
+                if (Array.isArray(c) && c.length > 0) {
+                    let changed = false;
+                    c.forEach(it => { if (it.img !== 'bakso.png') { it.img = 'bakso.png'; changed = true; } });
+                    if (changed) localStorage.setItem('bakso_cart', JSON.stringify(c));
+                }
+            }
+
+            // orders
+            const rawO = localStorage.getItem('bakso_orders');
+            if (rawO) {
+                const o = JSON.parse(rawO || '[]');
+                if (Array.isArray(o) && o.length > 0) {
+                    let changed = false;
+                    o.forEach(order => {
+                        if (Array.isArray(order.items)) {
+                            order.items.forEach(it => { if (it.img && it.img !== 'bakso.png') { it.img = 'bakso.png'; changed = true; } });
+                        }
+                    });
+                    if (changed) localStorage.setItem('bakso_orders', JSON.stringify(o));
+                }
+            }
+        } catch (e) {
+            // fail silently
+        }
+    })();
+
+    function saveProducts() { localStorage.setItem('bakso_products', JSON.stringify(products)); }
+    // CART state, persistence
+    let cart = [];
+
+    function saveCart() {
+        localStorage.setItem('bakso_cart', JSON.stringify(cart));
+        updateCartCount();
+    }
+
+    function loadCart() {
+        try {
+            const raw = localStorage.getItem('bakso_cart');
+            cart = raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            cart = [];
+        }
+        updateCartCount();
+    }
+
+    function parsePrice(str) {
+        // Convert 'Rp 25.000' => 25000
+        return parseInt((str || '').replace(/[^0-9]/g, ''), 10) || 0;
+    }
+
+    function formatPrice(n) {
+        return 'Rp ' + n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function renderProducts(list) {
+        const container = document.getElementById('productList');
+        container.innerHTML = '';
+        if (list.length === 0) {
+            container.innerHTML = '<p>Tidak ada produk ditemukan.</p>';
+            return;
+        }
+        list.forEach(product => {
+            const card = document.createElement('div');
+            card.style.border = '1px solid #eee';
+            card.style.borderRadius = '8px';
+            card.style.overflow = 'hidden';
+            card.style.background = '#fff';
+            card.innerHTML = `
+                <img src="${product.img}" alt="${product.name}" style="width:100%;height:140px;object-fit:cover;">
+                <div style="padding:12px;">
+                    <h3 style="margin:0 0 8px 0;font-size:1.1em;">${product.name}</h3>
+                    <p style="margin:0 0 4px 0;color:#555;">${product.price}</p>
+                    <span style="font-size:0.9em;color:#888;">${product.type.charAt(0).toUpperCase() + product.type.slice(1)}</span>
+                    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+                        <button data-name="${product.name}" class="addToCartBtn" style="flex:1;padding:8px;border:none;border-radius:6px;background:linear-gradient(90deg,#2a5298,#1e3c72);color:#fff;cursor:pointer;">Tambahkan ke Keranjang</button>
+                        <button data-name="${product.name}" class="buyNowBtn" style="padding:8px 10px;border:1px solid #2a5298;border-radius:6px;background:#fff;color:#1e3c72;cursor:pointer;">Beli</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+        // attach listeners
+        document.querySelectorAll('.addToCartBtn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const name = e.currentTarget.getAttribute('data-name');
+                const p = products.find(x => x.name === name);
+                addToCart(p);
+            });
+        });
+        document.querySelectorAll('.buyNowBtn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const name = e.currentTarget.getAttribute('data-name');
+                const p = products.find(x => x.name === name);
+                addToCart(p);
+                openCart();
+            });
+        });
+    }
+
+    function filterProducts(e) {
+        e.preventDefault();
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        const filter = document.getElementById('filterSelect').value;
+        const filtered = products.filter(p => {
+            const matchType = filter ? p.type === filter : true;
+            const matchSearch = p.name.toLowerCase().includes(search);
+            return matchType && matchSearch;
+        });
+        renderProducts(filtered);
+    }
+
+    document.getElementById('searchForm').addEventListener('submit', filterProducts);
+
+    renderProducts(products);
+    loadCart();
+
+    // Hide login link if user logged in; show logout and admin link if applicable
+    (function updateLoginVisibility(){
+        const user = localStorage.getItem('loggedInUser');
+        const role = (localStorage.getItem('loggedInRole') || '').toLowerCase();
+        const loginLink = document.querySelector('a[href="../login/login.html"]');
+        if (user) {
+            if (loginLink) loginLink.style.display = 'none';
+            const headerRight = document.querySelector('header > div');
+            const welcome = document.createElement('div');
+            welcome.textContent = 'Halo, ' + user;
+            welcome.style.color = '#fff';
+            welcome.style.fontWeight = '600';
+            welcome.style.marginRight = '8px';
+            headerRight.insertBefore(welcome, headerRight.firstChild);
+
+            // If admin, show Admin link
+            if (role === 'admin') {
+                const adminLink = document.createElement('a');
+                adminLink.href = '../masteradmin/admindb.html';
+                adminLink.textContent = 'Admin';
+                adminLink.style.padding = '8px 12px';
+                adminLink.style.background = '#0b5ed7';
+                adminLink.style.color = '#fff';
+                adminLink.style.borderRadius = '6px';
+                adminLink.style.textDecoration = 'none';
+                headerRight.insertBefore(adminLink, headerRight.firstChild.nextSibling);
+            }
+
+            // Logout button
+            const logoutBtn = document.createElement('button');
+            logoutBtn.textContent = 'Logout';
+            logoutBtn.style.padding = '8px 12px';
+            logoutBtn.style.marginLeft = '8px';
+            logoutBtn.style.border = 'none';
+            logoutBtn.style.borderRadius = '6px';
+            logoutBtn.style.cursor = 'pointer';
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('loggedInUser');
+                localStorage.removeItem('loggedInRole');
+                // optional: keep bakso_cart, etc.
+                location.reload();
+            });
+            headerRight.appendChild(logoutBtn);
+        }
+    })();
+
+    // Cart sidebar UI
+    const cartSidebar = document.createElement('div');
+    cartSidebar.id = 'cartSidebar';
+    cartSidebar.style.position = 'fixed';
+    cartSidebar.style.top = '0';
+    cartSidebar.style.right = '0';
+    cartSidebar.style.height = '100%';
+    cartSidebar.style.width = '360px';
+    cartSidebar.style.maxWidth = '95%';
+    cartSidebar.style.background = '#fff';
+    cartSidebar.style.boxShadow = '0 8px 40px rgba(0,0,0,0.2)';
+    cartSidebar.style.transform = 'translateX(110%)';
+    cartSidebar.style.transition = 'transform 0.25s ease';
+    cartSidebar.style.zIndex = '1200';
+    cartSidebar.innerHTML = `
+        <div style="padding:16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+            <h2 style="margin:0;font-size:1.1em;color:#1e3c72;">Keranjang</h2>
+            <div>
+                <button id="closeCart" style="background:transparent;border:none;font-size:1.2em;cursor:pointer;color:#999;">✕</button>
+            </div>
+        </div>
+        <div id="cartItems" style="padding:12px;overflow:auto;max-height:60vh;"></div>
+        <div style="padding:12px;border-top:1px solid #eee;background:#fafafa;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <strong>Total</strong>
+                <strong id="cartTotal">Rp 0</strong>
+            </div>
+            <button id="checkoutBtn" style="width:100%;padding:10px;border:none;border-radius:8px;background:linear-gradient(90deg,#2a5298,#1e3c72);color:#fff;cursor:pointer;">Lanjut ke Checkout</button>
+        </div>
+        <div id="checkoutFormContainer" style="display:none;padding:12px;border-top:1px solid #eee;">
+            <h3 style="margin-top:0;color:#1e3c72;">Checkout</h3>
+            <form id="checkoutForm">
+                <div style="margin-bottom:8px;"><input name="name" placeholder="Nama penerima" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;"></div>
+                <div style="margin-bottom:8px;"><input name="phone" placeholder="Nomor HP" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;"></div>
+                <div style="margin-bottom:8px;"><textarea name="address" placeholder="Alamat lengkap" required style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;resize:vertical;min-height:60px;"></textarea></div>
+                <div style="margin-bottom:8px;"><select name="payment" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;"><option value="cod">Bayar di tempat (Cash)</option><option value="transfer">Transfer</option></select></div>
+                <div style="display:flex;gap:8px;"><button type="submit" style="flex:1;padding:10px;border:none;border-radius:8px;background:#198754;color:#fff;">Konfirmasi & Pesan</button><button id="cancelCheckout" type="button" style="padding:10px;border:1px solid #ccc;border-radius:8px;background:#fff;">Batal</button></div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(cartSidebar);
+
+    function updateCartCount() {
+        const count = cart.reduce((s, it) => s + (it.qty || 0), 0);
+        document.getElementById('cartCount').textContent = count;
+    }
+
+    function renderCart() {
+        const container = document.getElementById('cartItems');
+        container.innerHTML = '';
+        if (cart.length === 0) {
+            container.innerHTML = '<p style="color:#666;">Keranjang kosong.</p>';
+            document.getElementById('cartTotal').textContent = formatPrice(0);
+            return;
+        }
+        cart.forEach((it, idx) => {
+            const item = document.createElement('div');
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '8px';
+            item.style.padding = '8px 0';
+            item.style.borderBottom = '1px dashed #eee';
+            item.innerHTML = `
+                <img src="${it.img}" style="width:56px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #f0f0f0;" />
+                <div style="flex:1;">
+                    <div style="font-weight:600;color:#1e3c72;">${it.name}</div>
+                    <div style="color:#666;font-size:0.95em;margin-top:4px;">${formatPrice(parsePrice(it.price))}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <button data-idx="${idx}" class="decQty" style="padding:4px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;">-</button>
+                        <div style="min-width:26px;text-align:center;">${it.qty}</div>
+                        <button data-idx="${idx}" class="incQty" style="padding:4px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;">+</button>
+                    </div>
+                    <button data-idx="${idx}" class="removeItem" style="background:transparent;border:none;color:#d9534f;cursor:pointer">Hapus</button>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+        // attach qty listeners
+        document.querySelectorAll('.incQty').forEach(b => b.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-idx'));
+            cart[i].qty = (cart[i].qty || 0) + 1;
+            saveCart(); renderCart();
+        }));
+        document.querySelectorAll('.decQty').forEach(b => b.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-idx'));
+            cart[i].qty = Math.max(1, (cart[i].qty || 1) - 1);
+            saveCart(); renderCart();
+        }));
+        document.querySelectorAll('.removeItem').forEach(b => b.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-idx'));
+            cart.splice(i,1);
+            saveCart(); renderCart();
+        }));
+
+        const total = cart.reduce((s, it) => s + (parsePrice(it.price) * (it.qty || 0)), 0);
+        document.getElementById('cartTotal').textContent = formatPrice(total);
+    }
+
+    function addToCart(product) {
+        const existing = cart.find(c => c.name === product.name);
+        if (existing) {
+            existing.qty = (existing.qty || 0) + 1;
+        } else {
+            cart.push(Object.assign({qty:1}, product));
+        }
+        saveCart();
+        renderCart();
+        // small feedback
+        const btn = document.getElementById('cartBtn');
+        btn.animate([{transform:'scale(1)'},{transform:'scale(1.06)'},{transform:'scale(1)'}],{duration:220});
+    }
+
+    function openCart() {
+        cartSidebar.style.transform = 'translateX(0)';
+        renderCart();
+    }
+
+    function closeCart() { cartSidebar.style.transform = 'translateX(110%)'; }
+
+    document.getElementById('cartBtn').addEventListener('click', openCart);
+    document.getElementById('closeCart').addEventListener('click', closeCart);
+    document.getElementById('checkoutBtn').addEventListener('click', () => {
+        document.getElementById('checkoutFormContainer').style.display = 'block';
+        document.getElementById('checkoutBtn').style.display = 'none';
+    });
+    document.getElementById('cancelCheckout').addEventListener('click', () => {
+        document.getElementById('checkoutFormContainer').style.display = 'none';
+        document.getElementById('checkoutBtn').style.display = 'block';
+    });
+
+    document.getElementById('checkoutForm').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        if (cart.length === 0) {
+            alert('Keranjang kosong. Tambahkan produk terlebih dahulu.');
+            return;
+        }
+        const form = new FormData(ev.target);
+        const order = {
+            id: 'ORD' + Date.now(),
+            name: form.get('name'),
+            phone: form.get('phone'),
+            address: form.get('address'),
+            payment: form.get('payment'),
+            user: localStorage.getItem('loggedInUser') || null,
+            items: cart.map(c => ({ name: c.name, price: parsePrice(c.price), qty: c.qty })),
+            total: cart.reduce((s, it) => s + parsePrice(it.price) * it.qty, 0),
+            createdAt: new Date().toISOString()
+        };
+        // Save to local orders (simple persistence) - optional
+        try {
+            const prev = JSON.parse(localStorage.getItem('bakso_orders') || '[]');
+            prev.push(order);
+            localStorage.setItem('bakso_orders', JSON.stringify(prev));
+        } catch(e){}
+
+        // Clear cart
+        cart = [];
+        saveCart(); renderCart();
+        document.getElementById('checkoutFormContainer').innerHTML = `<div style="padding:12px;"><h3>Terima kasih!</h3><p>Pemesanan Anda telah diterima dengan nomor <strong>${order.id}</strong>.</p><p>Total: <strong>${formatPrice(order.total)}</strong></p><p style="margin-top:8px;"><button id="doneBtn" style="padding:8px 12px;border:none;border-radius:6px;background:#2a5298;color:#fff;">Selesai</button></p></div>`;
+        document.getElementById('doneBtn').addEventListener('click', () => { closeCart(); document.getElementById('checkoutFormContainer').style.display = 'none'; document.getElementById('checkoutBtn').style.display = 'block'; document.getElementById('checkoutFormContainer').innerHTML = '';
+            // restore original form
+            location.reload();
+        });
+    });
+
+    // Add some additional styling overrides
+    // Tambahkan style elegan biru & biru tua
+    const style = document.createElement('style');
+    style.innerHTML = `
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            color: #f4f7fa;
+        }
+        header {
+            background: #1e3c72;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(30,60,114,0.08);
+        }
+        h1 {
+            margin: 0;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+        a[href] {
+            background: linear-gradient(90deg, #2a5298 0%, #1e3c72 100%);
+            color: #fff !important;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(42,82,152,0.12);
+            transition: background 0.2s;
+        }
+        a[href]:hover {
+            background: #16325c;
+        }
+        section {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(30,60,114,0.10);
+            padding: 32px;
+        }
+        #searchForm input, #searchForm select, #searchForm button {
+            border: none;
+            border-radius: 6px;
+            outline: none;
+            font-size: 1em;
+        }
+        #searchForm input, #searchForm select {
+            background: #f4f7fa;
+            color: #1e3c72;
+        }
+        #searchForm button {
+            background: linear-gradient(90deg, #2a5298 0%, #1e3c72 100%);
+            color: #fff;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #searchForm button:hover {
+            background: #16325c;
+        }
+        #productList > div {
+            box-shadow: 0 2px 12px rgba(30,60,114,0.10);
+            transition: transform 0.15s;
+        }
+        #productList > div:hover {
+            transform: translateY(-4px) scale(1.03);
+            box-shadow: 0 6px 24px rgba(42,82,152,0.18);
+        }
+        #productList img {
+            border-bottom: 2px solid #2a5298;
+        }
+        #productList h3 {
+            color: #1e3c72;
+        }
+        #productList p, #productList span {
+            color: #2a5298;
+        }
+        /* cart sidebar overrides for light theme */
+        #cartSidebar h2 { color: #1e3c72; }
+        #cartSidebar p { color: #444; }
+    `;
+    document.head.appendChild(style);
+    </script>
+</body>
+</html>
